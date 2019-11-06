@@ -1,0 +1,118 @@
+---
+title: "Customer Churn Data Analysis"
+---
+The churn.csv data contains information of several churn and non-churn customers. 
+
+Read churn.csv data.
+```{r}
+churnData <- read.csv("/Users/Shima/R_projects/customer_churn/churn.csv", header = TRUE)
+head(churnData)
+```
+Clean data before proceeding to create training/testing sets.
+```{r}
+# check data: count number of null rows
+sum(!complete.cases(churnData))
+
+# remove null rows 
+churnData <- churnData[complete.cases(churnData), ]
+
+# need to reduce categories before we are able to create a model
+# multiple versions of No category: No Internet Service, No Phone Service, binary 0, etc. -> must be consistently No instead
+
+# replace No Internet Service category in internet related columns with No - columns 9-15 are internet related
+for(i in 9:15) {
+    churnData[churnData[,i]=="No internet service", i] <- "No"
+    churnData[,i] <- as.factor(churnData[,i])
+}
+
+# replace No Internet Service category in MultipleLines with No 
+churnData[churnData$MultipleLines=="No phone service", "MultipleLines"] <- "No"
+churnData$MultipleLines <- as.factor(churnData$MultipleLines)
+
+# replace binary categories in SeniorCitizen column with Yes or No 
+churnData[churnData$SeniorCitizen=="0", "SeniorCitizen"] <- "No"
+churnData[churnData$SeniorCitizen=="1", "SeniorCitizen"] <- "Yes"
+churnData$SeniorCitizen <- as.factor(churnData$SeniorCitizen)
+
+head(churnData)
+
+# group tenures to decrease number of categories 
+min(churnData$tenure)
+max(churnData$tenure)
+churnData$tenureGroup <- NA
+numRows <- dim(churnData)[1]
+for(i in 1:numRows) {
+    tenure <- churnData$tenure[i] 
+    if (tenure >= 0 & tenure <= 12){
+        churnData$tenureGroup[i] <- "0-12 Month"
+    }else if(tenure > 12 & tenure <= 24){
+        churnData$tenureGroup[i] <- "12-24 Month" 
+    }else if (tenure > 24 & tenure <= 48){
+        churnData$tenureGroup[i] <- "24-48 Month"
+    }else if (tenure > 48 & tenure <=60){
+         churnData$tenureGroup[i] <- "48-60 Month" 
+    }else if (tenure > 60){
+        churnData$tenureGroup[i] <- "> 60 Month"
+    }
+}
+churnData$tenureGroup <- as.factor(churnData$tenureGroup)
+```
+
+Randomly select 35% of the data and use that as the test set.
+```{r}
+# create testing / training datasets
+num_samples = dim(churnData)[1]
+sampling.rate = 0.35
+testing <-sample(1:num_samples,sampling.rate*num_samples,replace = TRUE)
+testingset <- subset(churnData[testing,])
+training <- setdiff(1:num_samples,testing)
+trainingset <- subset(churnData[training,])
+```
+Create a random forest model to predict customer churn and use this model on the test set.
+```{r}
+library("randomForest")
+randomForestModel <- randomForest(Churn ~. -tenure -customerID, data=trainingset, ntree=1000)
+plot(randomForestModel)
+legend("top", colnames(randomForestModel$err.rate), col=1:3, cex=0.8,fill=1:3)
+
+# predict on testing set
+prdictions <- predict(randomForestModel, testingset)
+predictionResults <- data.frame(Churn = prdictions)
+head(predictionResults)
+```
+Evaluate the accuracy of the random forest model over the test set.
+```{r}
+# test is the one we predict 
+wrongPredictions = sum(predictionResults$Churn != trainingset$Churn) 
+
+# claculate misclassification rate
+sizeOfTestSet = dim(trainingset)[1]
+misclassification = wrongPredictions / sizeOfTestSet
+print(paste("Missclassification Rate: ", round(misclassification*100,2), "%"))
+```
+
+*Confusion Matrix Setup:*
+```{r}
+library("crossval")
+cm = confusionMatrix(testingset$Churn, predictionResults$Churn, negative="No") 
+cm
+```
+For the test set:  
+How many predictions were yes?  
+```{r}
+print(paste("Number of Yes predictions:",sum(predictionResults$Churn == "Yes")))
+print(paste("Number of true positives:",cm[2]))
+```
+How many predictions were yes but wrong?
+```{r}
+print(paste("Number of false positives:",cm[1]))
+```
+How many predictions were no?
+```{r}
+print(paste("Number of No predictions:",sum(predictionResults$Churn == "No")))
+print(paste("Number of true negatives:",cm[3]))
+```
+How many predictions were no but wrong?
+```{r}
+print(paste("Number of false negatives:",cm[4]))
+```
