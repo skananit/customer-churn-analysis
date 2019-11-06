@@ -1,4 +1,4 @@
-name: "Advertising Data Analysis"
+name: "Customer Churn Analysis"
 output_dir: "."
 output:
   html_document:
